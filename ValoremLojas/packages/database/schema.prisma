@@ -1,0 +1,370 @@
+// =============================================
+// VALOREM LOJAS — Prisma Schema
+// Multi-tenant SaaS E-commerce
+// =============================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =============================================
+// TENANT (dono da conta SaaS — ex: empresa X)
+// =============================================
+
+model Tenant {
+  id        String   @id @default(uuid())
+  name      String
+  email     String   @unique
+  plan      Plan     @default(BASIC)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  stores Store[]
+
+  @@map("tenants")
+}
+
+enum Plan {
+  BASIC
+  PRO
+  ENTERPRISE
+}
+
+// =============================================
+// STORE (loja do cliente — 1 tenant N stores)
+// =============================================
+
+model Store {
+  id          String   @id @default(uuid())
+  tenantId    String
+  name        String
+  subdomain   String   @unique  // ex: minhaloja.valorem.lojas
+  domain      String?           // ex: www.minhaloja.com.br (domínio próprio futuro)
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Configurações visuais (básico — logo, cores)
+  logoUrl     String?
+  primaryColor   String   @default("#000000")
+  secondaryColor String   @default("#ffffff")
+  description String?
+
+  tenant      Tenant     @relation(fields: [tenantId], references: [id])
+  users       User[]
+  products    Product[]
+  categories  Category[]
+  orders      Order[]
+  customers   Customer[]
+  coupons     Coupon[]
+  storeSettings StoreSettings?
+
+  @@index([tenantId])
+  @@map("stores")
+}
+
+model StoreSettings {
+  id                String  @id @default(uuid())
+  storeId           String  @unique
+  allowGuestCheckout Boolean @default(true)
+  currency          String  @default("BRL")
+  maxInstallments   Int     @default(12)
+  minOrderValue     Decimal @default(0)
+  freeShippingFrom  Decimal?
+
+  store Store @relation(fields: [storeId], references: [id])
+
+  @@map("store_settings")
+}
+
+// =============================================
+// USER (admin/staff da loja)
+// =============================================
+
+model User {
+  id        String   @id @default(uuid())
+  storeId   String
+  email     String
+  password  String
+  name      String
+  role      UserRole @default(STAFF)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  store     Store    @relation(fields: [storeId], references: [id])
+
+  @@unique([storeId, email])
+  @@index([storeId])
+  @@map("users")
+}
+
+enum UserRole {
+  ADMIN
+  STAFF
+}
+
+// =============================================
+// PRODUTO
+// =============================================
+
+model Product {
+  id          String   @id @default(uuid())
+  storeId     String
+  categoryId  String?
+  name        String
+  slug        String
+  description String?
+  price       Decimal
+  comparePrice Decimal?         // preço "de" (riscado)
+  costPrice   Decimal?          // custo interno
+  stock       Int      @default(0)
+  sku         String?
+  active      Boolean  @default(true)
+  featured    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  store       Store        @relation(fields: [storeId], references: [id])
+  category    Category?    @relation(fields: [categoryId], references: [id])
+  images      ProductImage[]
+  orderItems  OrderItem[]
+
+  @@unique([storeId, slug])
+  @@index([storeId])
+  @@index([storeId, active])
+  @@map("products")
+}
+
+model ProductImage {
+  id        String  @id @default(uuid())
+  productId String
+  url       String
+  alt       String?
+  order     Int     @default(0)  // ordenação das imagens
+
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@map("product_images")
+}
+
+// =============================================
+// CATEGORIA
+// =============================================
+
+model Category {
+  id        String    @id @default(uuid())
+  storeId   String
+  name      String
+  slug      String
+  parentId  String?                // categorias aninhadas
+  imageUrl  String?
+  active    Boolean   @default(true)
+
+  store     Store     @relation(fields: [storeId], references: [id])
+  parent    Category? @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children  Category[] @relation("CategoryHierarchy")
+  products  Product[]
+
+  @@unique([storeId, slug])
+  @@index([storeId])
+  @@map("categories")
+}
+
+// =============================================
+// CLIENTE (comprador)
+// =============================================
+
+model Customer {
+  id        String   @id @default(uuid())
+  storeId   String
+  name      String
+  email     String
+  phone     String?
+  cpf       String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  store     Store      @relation(fields: [storeId], references: [id])
+  orders    Order[]
+  addresses Address[]
+
+  @@unique([storeId, email])
+  @@index([storeId])
+  @@map("customers")
+}
+
+model Address {
+  id         String  @id @default(uuid())
+  customerId String
+  label      String? // "Casa", "Trabalho"
+  zipCode    String
+  street     String
+  number     String
+  complement String?
+  district   String
+  city       String
+  state      String
+  isDefault  Boolean @default(false)
+
+  customer   Customer @relation(fields: [customerId], references: [id])
+
+  @@map("addresses")
+}
+
+// =============================================
+// PEDIDO
+// =============================================
+
+model Order {
+  id          String      @id @default(uuid())
+  storeId     String
+  customerId  String?
+  status      OrderStatus @default(PENDING)
+  total       Decimal
+  subtotal    Decimal
+  discount    Decimal     @default(0)
+  shipping    Decimal     @default(0)
+  couponCode  String?
+  notes       String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  // Endereço de entrega (snapshot)
+  shippingZipCode  String?
+  shippingStreet   String?
+  shippingNumber   String?
+  shippingCity     String?
+  shippingState    String?
+
+  store       Store       @relation(fields: [storeId], references: [id])
+  customer    Customer?   @relation(fields: [customerId], references: [id])
+  items       OrderItem[]
+  payment     Payment?
+
+  @@index([storeId])
+  @@index([storeId, status])
+  @@map("orders")
+}
+
+enum OrderStatus {
+  PENDING
+  AWAITING_PAYMENT
+  PAID
+  PROCESSING
+  SHIPPED
+  DELIVERED
+  CANCELLED
+  REFUNDED
+}
+
+model OrderItem {
+  id         String  @id @default(uuid())
+  orderId    String
+  productId  String
+  name       String  // snapshot do nome
+  price      Decimal // snapshot do preço
+  quantity   Int
+
+  order      Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product    Product @relation(fields: [productId], references: [id])
+
+  @@map("order_items")
+}
+
+// =============================================
+// PAGAMENTO — integrado à plataforma Valorem
+// =============================================
+
+model Payment {
+  id                 String        @id @default(uuid())
+  orderId            String        @unique
+  provider           String        @default("valorem")  // valorem | stripe | mp
+  method             PaymentMethod
+  status             PaymentStatus @default(PENDING)
+  amount             Decimal
+  installments       Int           @default(1)
+
+  // IDs externos (da plataforma de pagamento Valorem)
+  externalId         String?       // ID da transação na plataforma Valorem
+  externalCheckoutId String?       // ID do checkout na plataforma Valorem
+  pixCode            String?       // código PIX (copia-cola)
+  pixQrCode          String?       // QR Code base64
+  boletoUrl          String?       // URL do boleto
+
+  paidAt             DateTime?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  order              Order         @relation(fields: [orderId], references: [id])
+  webhookEvents      PaymentWebhookEvent[]
+
+  @@map("payments")
+}
+
+enum PaymentMethod {
+  CREDIT_CARD
+  DEBIT_CARD
+  PIX
+  BOLETO
+  CASH           // físico
+}
+
+enum PaymentStatus {
+  PENDING
+  PROCESSING
+  APPROVED
+  FAILED
+  CANCELLED
+  REFUNDED
+  CHARGEBACK
+}
+
+// Log de webhooks recebidos da plataforma de pagamento
+model PaymentWebhookEvent {
+  id        String   @id @default(uuid())
+  paymentId String
+  event     String
+  payload   Json
+  processed Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  payment   Payment  @relation(fields: [paymentId], references: [id])
+
+  @@map("payment_webhook_events")
+}
+
+// =============================================
+// CUPOM
+// =============================================
+
+model Coupon {
+  id          String      @id @default(uuid())
+  storeId     String
+  code        String
+  type        CouponType  // PERCENTAGE | FIXED
+  value       Decimal
+  minValue    Decimal?    // pedido mínimo para usar
+  maxUses     Int?        // null = ilimitado
+  usedCount   Int         @default(0)
+  active      Boolean     @default(true)
+  expiresAt   DateTime?
+  createdAt   DateTime    @default(now())
+
+  store       Store       @relation(fields: [storeId], references: [id])
+
+  @@unique([storeId, code])
+  @@index([storeId])
+  @@map("coupons")
+}
+
+enum CouponType {
+  PERCENTAGE
+  FIXED
+}

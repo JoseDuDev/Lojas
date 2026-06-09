@@ -1,0 +1,30 @@
+{
+  "name": "valorem-lojas",
+  "version": "1.0.0",
+  "private": true,
+  "description": "SaaS E-commerce Multi-Tenant — Valorem Lojas",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:api\" \"npm run dev:web\"",
+    "dev:api": "npm run dev --workspace=apps/api",
+    "dev:web": "npm run dev --workspace=apps/web",
+    "build": "npm run build --workspace=apps/api && npm run build --workspace=apps/web",
+    "db:migrate": "npm run migrate --workspace=packages/database",
+    "db:generate": "npm run generate --workspace=packages/database",
+    "db:studio": "npm run studio --workspace=packages/database",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "docker:logs": "docker-compose logs -f"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.0",
+    "typescript": "^5.3.0"
+  },
+  "dependencies": {
+    "@types/nodemailer": "^8.0.0",
+    "nodemailer": "^8.0.10"
+  }
+}
