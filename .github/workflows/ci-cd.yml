@@ -3,8 +3,14 @@ name: CI/CD
 on:
   push:
     branches: [main]
+    paths:
+      - 'ValoremLojas/**'
+      - '.github/workflows/ci-cd.yml'
   pull_request:
     branches: [main]
+    paths:
+      - 'ValoremLojas/**'
+      - '.github/workflows/ci-cd.yml'
 
 env:
   REGISTRY: ghcr.io
@@ -49,8 +55,8 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
-          context: .
-          file: apps/api/Dockerfile
+          context: ValoremLojas/
+          file: ValoremLojas/apps/api/Dockerfile
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -96,8 +102,8 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
-          context: .
-          file: apps/web/Dockerfile
+          context: ValoremLojas/
+          file: ValoremLojas/apps/web/Dockerfile
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
