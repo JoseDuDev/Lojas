@@ -51,7 +51,8 @@ export class CheckoutService {
       },
     })
 
-    if (products.length !== dto.items.length) {
+    const uniqueProductIds = new Set(dto.items.map((i) => i.productId))
+    if (products.length !== uniqueProductIds.size) {
       throw new BadRequestException('Um ou mais produtos não encontrados')
     }
 
@@ -106,12 +107,14 @@ export class CheckoutService {
       }
     }
 
+    const resolvePrice = (item: CartItem, product: any): number => {
+      const variant = item.variantId ? variantMap.get(item.variantId) : null
+      return variant ? Number(variant.price) : Number(product.price)
+    }
+
     let subtotal = dto.items.reduce((acc, item) => {
       const product = products.find((p) => p.id === item.productId)!
-      const price = item.variantId
-        ? Number(variantMap.get(item.variantId)!.price)
-        : Number(product.price)
-      return acc + price * item.quantity
+      return acc + resolvePrice(item, product) * item.quantity
     }, 0)
 
     // 2. Aplica cupom (se houver)
@@ -181,8 +184,7 @@ export class CheckoutService {
         items: {
           create: dto.items.map((item) => {
             const product = products.find((p) => p.id === item.productId)!
-            const variant = item.variantId ? variantMap.get(item.variantId) : null
-            const price = variant ? Number(variant.price) : Number(product.price)
+            const price = resolvePrice(item, product)
             return {
               productId: item.productId,
               variantId: item.variantId ?? null,
