@@ -45,7 +45,11 @@ export default function ProductPage() {
     return product ? Number(product.price) : 0
   }, [product, selectedVariant, hasVariants])
 
-  const displayStock = selectedVariant ? selectedVariant.stock : (product?.stock ?? 0)
+  const displayStock = selectedVariant
+    ? selectedVariant.stock
+    : hasVariants
+      ? null
+      : (product?.stock ?? 0)
 
   const displayImages: any[] =
     selectedVariant?.images?.length ? selectedVariant.images : (product?.images ?? [])
@@ -53,7 +57,7 @@ export default function ProductPage() {
   const image = displayImages[0]?.url
 
   const allSelected = !hasVariants || Object.keys(selectedValues).length === product?.attributes?.length
-  const canAdd = allSelected && displayStock > 0
+  const canAdd = allSelected && (displayStock ?? 0) > 0
 
   function handleAddToCart() {
     if (!product || !canAdd) return
@@ -108,11 +112,16 @@ export default function ProductPage() {
             )}
             {displayPrice.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
           </span>
-          {!hasVariants && product.comparePrice && (
-            <span className="text-lg text-gray-400 line-through">
-              {Number(product.comparePrice).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-            </span>
-          )}
+          {(() => {
+            const cp = selectedVariant
+              ? selectedVariant.comparePrice
+              : (!hasVariants ? product.comparePrice : null)
+            return cp ? (
+              <span className="text-lg text-gray-400 line-through">
+                {Number(cp).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+              </span>
+            ) : null
+          })()}
         </div>
 
         {product.description && (
@@ -186,18 +195,20 @@ export default function ProductPage() {
           className="mt-4 py-3 px-6 rounded-xl text-white font-semibold text-lg transition
             bg-black hover:bg-gray-800 disabled:bg-gray-300 disabled:cursor-not-allowed"
         >
-          {displayStock === 0
-            ? 'Sem estoque'
-            : !allSelected
-              ? 'Selecione as opções'
+          {displayStock === null || !allSelected
+            ? 'Selecione as opções'
+            : displayStock === 0
+              ? 'Sem estoque'
               : added
                 ? '✓ Adicionado!'
                 : 'Adicionar ao carrinho'}
         </button>
 
-        <p className="text-sm text-gray-400">
-          {displayStock > 0 ? `${displayStock} em estoque` : 'Produto esgotado'}
-        </p>
+        {displayStock !== null && (
+          <p className="text-sm text-gray-400">
+            {displayStock > 0 ? `${displayStock} em estoque` : 'Produto esgotado'}
+          </p>
+        )}
       </div>
     </div>
   )
