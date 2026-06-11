@@ -13,12 +13,19 @@ interface Stats {
 export default function AdminDashboard() {
   const [orders, setOrders] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [usage, setUsage] = useState<any>(null)
 
   useEffect(() => {
     const token = localStorage.getItem('admin_token')
     if (!token) { window.location.href = '/admin/login'; return }
 
-    api.get('/orders?page=1', { token }).then(setOrders).catch(console.error).finally(() => setLoading(false))
+    Promise.all([
+      api.get('/orders?page=1', { token }),
+      api.get('/plan/usage', { token }).catch(() => null),
+    ]).then(([ordersData, usageData]) => {
+      setOrders(ordersData)
+      setUsage(usageData)
+    }).catch(console.error).finally(() => setLoading(false))
   }, [])
 
   const revenue = orders
@@ -35,6 +42,64 @@ export default function AdminDashboard() {
   return (
     <div>
       <h1 className="text-2xl font-bold mb-6">Dashboard</h1>
+
+      {usage && usage.plan !== 'ENTERPRISE' && (
+        <div className="bg-white rounded-xl border p-5 mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-500">Plano</span>
+              <span className="bg-gray-100 text-gray-800 text-xs font-semibold px-2 py-1 rounded-full uppercase">
+                {usage.plan}
+              </span>
+            </div>
+            <a href="#" className="text-sm text-blue-600 hover:underline font-medium">
+              Upgrade →
+            </a>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            {[
+              {
+                label: 'Produtos',
+                current: usage.usage.products,
+                max: usage.limits.productsPerStore,
+                warning: usage.warnings.products,
+              },
+              {
+                label: 'Lojas',
+                current: usage.usage.stores,
+                max: usage.limits.stores,
+                warning: usage.warnings.stores,
+              },
+            ].map((item) => {
+              const pct = item.max ? Math.min(100, Math.round((item.current / item.max) * 100)) : 0
+              const barColor =
+                pct >= 100 ? 'bg-red-500' : pct >= 80 ? 'bg-yellow-400' : 'bg-green-500'
+              return (
+                <div key={item.label}>
+                  <div className="flex justify-between text-sm mb-1">
+                    <span className="font-medium text-gray-700">{item.label}</span>
+                    <span className="text-gray-500 tabular-nums">
+                      {item.current}/{item.max ?? '∞'}
+                    </span>
+                  </div>
+                  <div className="w-full bg-gray-100 rounded-full h-1.5">
+                    <div
+                      className={`h-1.5 rounded-full transition-all ${barColor}`}
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                  {pct >= 100 && (
+                    <p className="text-xs text-red-600 mt-1 font-medium">No limite — faça upgrade</p>
+                  )}
+                  {item.warning && pct < 100 && (
+                    <p className="text-xs text-yellow-600 mt-1">⚠ {pct}% do limite</p>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
         {cards.map((card) => (
