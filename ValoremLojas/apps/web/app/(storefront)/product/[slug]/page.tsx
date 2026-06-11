@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { useCart } from '../../../../lib/cart'
 import { api } from '../../../../lib/api'
@@ -11,28 +11,63 @@ export default function ProductPage() {
   const [product, setProduct] = useState<any>(null)
   const [qty, setQty] = useState(1)
   const [added, setAdded] = useState(false)
+  const [selectedValues, setSelectedValues] = useState<Record<string, string>>({})
   const addItem = useCart((s) => s.addItem)
 
   useEffect(() => {
     api.get(`/products/${slug}`).then(setProduct).catch(console.error)
   }, [slug])
 
-  if (!product) {
-    return <div className="max-w-4xl mx-auto px-4 py-16 text-center text-gray-400">Carregando...</div>
-  }
+  const hasVariants = Boolean(product?.attributes?.length)
 
-  const image = product.images?.[0]?.url
+  const selectedVariant = useMemo(() => {
+    if (!hasVariants || !product?.variants?.length) return null
+    if (Object.keys(selectedValues).length < product.attributes.length) return null
+    return (
+      product.variants.find((v: any) =>
+        v.attributeValues.every(
+          (vav: any) => selectedValues[vav.attributeValue.attributeId] === vav.attributeValueId,
+        ),
+      ) ?? null
+    )
+  }, [product, selectedValues, hasVariants])
+
+  const displayPrice = useMemo(() => {
+    if (selectedVariant) return Number(selectedVariant.price)
+    if (hasVariants && product?.variants?.length)
+      return Math.min(...product.variants.map((v: any) => Number(v.price)))
+    return product ? Number(product.price) : 0
+  }, [product, selectedVariant, hasVariants])
+
+  const displayStock = selectedVariant ? selectedVariant.stock : (product?.stock ?? 0)
+
+  const displayImages: any[] =
+    selectedVariant?.images?.length ? selectedVariant.images : (product?.images ?? [])
+
+  const image = displayImages[0]?.url
+
+  const allSelected = !hasVariants || Object.keys(selectedValues).length === product?.attributes?.length
+  const canAdd = allSelected && displayStock > 0
 
   function handleAddToCart() {
+    if (!product || !canAdd) return
+    const variantLabel = selectedVariant
+      ? ` (${selectedVariant.attributeValues.map((vav: any) => vav.attributeValue.value).join(' / ')})`
+      : ''
     addItem({
       productId: product.id,
-      name: product.name,
-      price: Number(product.price),
+      variantId: selectedVariant?.id ?? null,
+      name: product.name + variantLabel,
+      price: displayPrice,
       imageUrl: image,
       quantity: qty,
     })
     setAdded(true)
     setTimeout(() => setAdded(false), 2000)
+  }
+
+  if (!product) {
+    return <div className="max-w-4xl mx-auto px-4 py-16 text-center text-gray-400">Carregando...</div>
   }
 
   return (
@@ -55,9 +90,12 @@ export default function ProductPage() {
 
         <div className="flex items-baseline gap-3">
           <span className="text-3xl font-bold text-green-600">
-            {Number(product.price).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+            {hasVariants && !selectedVariant && (
+              <span className="text-base font-normal text-gray-500 mr-1">A partir de</span>
+            )}
+            {displayPrice.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
           </span>
-          {product.comparePrice && (
+          {!hasVariants && product.comparePrice && (
             <span className="text-lg text-gray-400 line-through">
               {Number(product.comparePrice).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
             </span>
@@ -68,32 +106,74 @@ export default function ProductPage() {
           <p className="text-gray-600 leading-relaxed">{product.description}</p>
         )}
 
+        {/* Seletores de variante */}
+        {hasVariants &&
+          product.attributes.map((attr: any) => (
+            <div key={attr.id}>
+              <p className="text-sm font-medium mb-2">{attr.name}</p>
+              <div className="flex flex-wrap gap-2">
+                {attr.values.map((val: any) => {
+                  const isSelected = selectedValues[attr.id] === val.id
+                  const hasStock = product.variants.some(
+                    (v: any) =>
+                      v.attributeValues.some((vav: any) => vav.attributeValueId === val.id) &&
+                      v.stock > 0,
+                  )
+                  return (
+                    <button
+                      key={val.id}
+                      disabled={!hasStock}
+                      onClick={() =>
+                        setSelectedValues((prev) => ({ ...prev, [attr.id]: val.id }))
+                      }
+                      className={`px-3 py-1.5 rounded-lg border text-sm font-medium transition
+                        ${isSelected ? 'border-black bg-black text-white' : 'border-gray-300 hover:border-gray-500'}
+                        ${!hasStock ? 'opacity-40 cursor-not-allowed line-through' : ''}`}
+                    >
+                      {val.value}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
+
         <div className="flex items-center gap-3 mt-2">
           <label className="font-medium text-sm">Quantidade:</label>
           <div className="flex items-center border rounded-lg overflow-hidden">
             <button
               className="px-3 py-2 bg-gray-100 hover:bg-gray-200"
               onClick={() => setQty(Math.max(1, qty - 1))}
-            >−</button>
+            >
+              −
+            </button>
             <span className="px-4 py-2 font-medium">{qty}</span>
             <button
               className="px-3 py-2 bg-gray-100 hover:bg-gray-200"
               onClick={() => setQty(qty + 1)}
-            >+</button>
+            >
+              +
+            </button>
           </div>
         </div>
 
         <button
           onClick={handleAddToCart}
-          disabled={product.stock === 0}
+          disabled={!canAdd}
           className="mt-4 py-3 px-6 rounded-xl text-white font-semibold text-lg transition
             bg-black hover:bg-gray-800 disabled:bg-gray-300 disabled:cursor-not-allowed"
         >
-          {product.stock === 0 ? 'Sem estoque' : added ? '✓ Adicionado!' : 'Adicionar ao carrinho'}
+          {displayStock === 0
+            ? 'Sem estoque'
+            : !allSelected
+              ? 'Selecione as opções'
+              : added
+                ? '✓ Adicionado!'
+                : 'Adicionar ao carrinho'}
         </button>
 
         <p className="text-sm text-gray-400">
-          {product.stock > 0 ? `${product.stock} em estoque` : 'Produto esgotado'}
+          {displayStock > 0 ? `${displayStock} em estoque` : 'Produto esgotado'}
         </p>
       </div>
     </div>
