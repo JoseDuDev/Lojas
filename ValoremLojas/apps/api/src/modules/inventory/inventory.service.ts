@@ -112,6 +112,20 @@ export class InventoryService {
     },
   ) {
     await this.ensureProductOwnership(storeId, productId)
+    // Check for existing variant with the same attribute combination
+    if (data.attributeValueIds.length > 0) {
+      const existing = await this.prisma.productVariant.findMany({
+        where: { productId },
+        include: { attributeValues: true },
+      })
+      const incomingKey = [...data.attributeValueIds].sort().join(',')
+      const duplicate = existing.find(
+        (v) => v.attributeValues.map((av) => av.attributeValueId).sort().join(',') === incomingKey,
+      )
+      if (duplicate) {
+        throw new BadRequestException('Já existe uma variante com essa combinação de atributos')
+      }
+    }
     return this.prisma.productVariant.create({
       data: {
         productId,
