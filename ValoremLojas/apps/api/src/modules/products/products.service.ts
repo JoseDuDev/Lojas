@@ -57,6 +57,20 @@ export class ProductsService {
       include: {
         images: { orderBy: { order: 'asc' } },
         category: true,
+        attributes: {
+          orderBy: { position: 'asc' },
+          include: { values: { orderBy: { position: 'asc' } } },
+        },
+        variants: {
+          where: { active: true },
+          orderBy: { createdAt: 'asc' },
+          include: {
+            images: { orderBy: { order: 'asc' } },
+            attributeValues: {
+              include: { attributeValue: { include: { attribute: true } } },
+            },
+          },
+        },
       },
     })
 
@@ -70,6 +84,7 @@ export class ProductsService {
       include: {
         images: { take: 1, orderBy: { order: 'asc' } },
         category: { select: { name: true } },
+        variants: { where: { active: true }, select: { price: true, stock: true } },
       },
     })
     await this.cache.del(this.cacheKey(storeId))
@@ -85,6 +100,7 @@ export class ProductsService {
       include: {
         images: { take: 1, orderBy: { order: 'asc' } },
         category: { select: { name: true } },
+        variants: { where: { active: true }, select: { price: true, stock: true } },
       },
     })
     await this.cache.del(this.cacheKey(storeId))
@@ -100,15 +116,23 @@ export class ProductsService {
   }
 
   private indexProduct(product: any) {
+    const hasVariants = product.variants && product.variants.length > 0
+    const price = hasVariants
+      ? Math.min(...product.variants.map((v: any) => Number(v.price)))
+      : Number(product.price)
+    const stock = hasVariants
+      ? product.variants.reduce((acc: number, v: any) => acc + v.stock, 0)
+      : product.stock
+
     this.searchService?.indexProduct({
       id: product.id,
       storeId: product.storeId,
       name: product.name,
       slug: product.slug,
       description: product.description,
-      price: Number(product.price),
+      price,
       comparePrice: product.comparePrice ? Number(product.comparePrice) : null,
-      stock: product.stock,
+      stock,
       active: product.active,
       featured: product.featured,
       categoryId: product.categoryId,
@@ -136,7 +160,11 @@ export class ProductsService {
     if (count === 0) {
       const product = await this.prisma.product.findUnique({
         where: { id: productId },
-        include: { images: { take: 1, orderBy: { order: 'asc' } }, category: { select: { name: true } } },
+        include: {
+          images: { take: 1, orderBy: { order: 'asc' } },
+          category: { select: { name: true } },
+          variants: { where: { active: true }, select: { price: true, stock: true } },
+        },
       })
       if (product) this.indexProduct(product)
     }
