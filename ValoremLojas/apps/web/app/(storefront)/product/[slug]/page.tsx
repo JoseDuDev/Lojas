@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { useCart } from '../../../../lib/cart'
 import { api } from '../../../../lib/api'
@@ -13,9 +13,15 @@ export default function ProductPage() {
   const [added, setAdded] = useState(false)
   const [selectedValues, setSelectedValues] = useState<Record<string, string>>({})
   const addItem = useCart((s) => s.addItem)
+  const addedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     api.get(`/products/${slug}`).then(setProduct).catch(console.error)
+  }, [slug])
+
+  useEffect(() => {
+    setSelectedValues({})
+    setQty(1)
   }, [slug])
 
   const hasVariants = Boolean(product?.attributes?.length)
@@ -63,8 +69,15 @@ export default function ProductPage() {
       quantity: qty,
     })
     setAdded(true)
-    setTimeout(() => setAdded(false), 2000)
+    if (addedTimerRef.current) clearTimeout(addedTimerRef.current)
+    addedTimerRef.current = setTimeout(() => setAdded(false), 2000)
   }
+
+  useEffect(() => {
+    return () => {
+      if (addedTimerRef.current) clearTimeout(addedTimerRef.current)
+    }
+  }, [])
 
   if (!product) {
     return <div className="max-w-4xl mx-auto px-4 py-16 text-center text-gray-400">Carregando...</div>
@@ -114,11 +127,21 @@ export default function ProductPage() {
               <div className="flex flex-wrap gap-2">
                 {attr.values.map((val: any) => {
                   const isSelected = selectedValues[attr.id] === val.id
-                  const hasStock = product.variants.some(
-                    (v: any) =>
-                      v.attributeValues.some((vav: any) => vav.attributeValueId === val.id) &&
-                      v.stock > 0,
-                  )
+                  const hasStock = product.variants.some((v: any) => {
+                    if (v.stock <= 0) return false
+                    const hasThisValue = v.attributeValues.some(
+                      (vav: any) => vav.attributeValueId === val.id,
+                    )
+                    if (!hasThisValue) return false
+                    for (const [otherAttrId, otherValueId] of Object.entries(selectedValues)) {
+                      if (otherAttrId === attr.id) continue
+                      const compatible = v.attributeValues.some(
+                        (vav: any) => vav.attributeValueId === otherValueId,
+                      )
+                      if (!compatible) return false
+                    }
+                    return true
+                  })
                   return (
                     <button
                       key={val.id}
