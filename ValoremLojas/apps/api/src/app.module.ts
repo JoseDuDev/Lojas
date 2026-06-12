@@ -17,6 +17,7 @@ import { PaymentsModule } from './modules/payments/payments.module'
 import { CouponsModule } from './modules/coupons/coupons.module'
 import { InventoryModule } from './modules/inventory/inventory.module'
 import { PlansModule } from './modules/plans/plans.module'
+import { BillingModule } from './modules/billing/billing.module'
 import { SearchModule } from './modules/search/search.module'
 import { MediaModule } from './modules/media/media.module'
 import { NotificationsModule } from './modules/notifications/notifications.module'
@@ -48,6 +49,7 @@ import { JobsModule } from './modules/jobs/jobs.module'
     CouponsModule,
     InventoryModule,
     PlansModule,
+    BillingModule,
     SearchModule,
     MediaModule,
     NotificationsModule,
