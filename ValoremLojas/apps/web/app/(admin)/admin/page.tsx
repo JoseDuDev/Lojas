@@ -3,17 +3,23 @@
 import { useEffect, useState } from 'react'
 import { api } from '../../../lib/api'
 
-interface Stats {
-  orders: number
-  revenue: number
-  products: number
-  customers: number
+interface BillingStatus {
+  plan: string
+  effectivePlan: string
+  trial: {
+    active: boolean
+    plan: string | null
+    endsAt: string | null
+    daysRemaining: number | null
+  }
+  pendingRequest: { id: string; toPlan: string; createdAt: string } | null
 }
 
 export default function AdminDashboard() {
   const [orders, setOrders] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [usage, setUsage] = useState<any>(null)
+  const [billing, setBilling] = useState<BillingStatus | null>(null)
 
   useEffect(() => {
     const token = localStorage.getItem('admin_token')
@@ -22,9 +28,11 @@ export default function AdminDashboard() {
     Promise.all([
       api.get('/orders?page=1', { token }),
       api.get('/plan/usage', { token }).catch(() => null),
-    ]).then(([ordersData, usageData]) => {
+      api.get<BillingStatus>('/billing/status', { token }).catch(() => null),
+    ]).then(([ordersData, usageData, billingData]) => {
       setOrders(ordersData)
       setUsage(usageData)
+      setBilling(billingData)
     }).catch(console.error).finally(() => setLoading(false))
   }, [])
 
@@ -46,16 +54,34 @@ export default function AdminDashboard() {
       {usage && usage.plan !== 'ENTERPRISE' && (
         <div className="bg-white rounded-xl border p-5 mb-6">
           <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="text-sm text-gray-500">Plano</span>
               <span className="bg-gray-100 text-gray-800 text-xs font-semibold px-2 py-1 rounded-full uppercase">
                 {usage.plan}
               </span>
+              {billing?.trial.active && (
+                <span className="bg-yellow-100 text-yellow-800 text-xs font-semibold px-2 py-1 rounded-full uppercase">
+                  EM TRIAL
+                </span>
+              )}
             </div>
-            <a href="#" className="text-sm text-blue-600 hover:underline font-medium">
-              Upgrade →
-            </a>
+            {billing?.pendingRequest ? (
+              <span className="text-sm text-blue-600 font-medium">
+                Upgrade solicitado
+              </span>
+            ) : (
+              <a href="/admin/settings" className="text-sm text-blue-600 hover:underline font-medium">
+                Upgrade →
+              </a>
+            )}
           </div>
+
+          {billing?.trial.active && billing.trial.daysRemaining !== null && (
+            <p className="text-xs text-yellow-700 mb-3">
+              Trial expira em {billing.trial.daysRemaining} dia{billing.trial.daysRemaining !== 1 ? 's' : ''}
+            </p>
+          )}
+
           <div className="grid grid-cols-2 gap-4">
             {[
               {
