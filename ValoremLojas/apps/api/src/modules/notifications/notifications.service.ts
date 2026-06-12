@@ -6,6 +6,7 @@ import {
   JOB_EMAIL_ORDER_CONFIRMATION,
   JOB_EMAIL_PAYMENT_CONFIRMED,
   JOB_EMAIL_NEW_ORDER_ALERT,
+  JOB_EMAIL_UPGRADE_REQUEST,
   JOB_DEFAULT_OPTS,
 } from '../jobs/jobs.constants'
 
@@ -21,6 +22,16 @@ export interface OrderEmailData {
   total: number
   paymentMethod?: string
   status: string
+}
+
+export interface UpgradeRequestEmailData {
+  tenantId: string
+  tenantName: string
+  tenantEmail: string
+  billingEmail: string | null
+  fromPlan: string
+  toPlan: string
+  requestId: string
 }
 
 @Injectable()
@@ -44,7 +55,19 @@ export class NotificationsService {
     await this.enqueue(JOB_EMAIL_NEW_ORDER_ALERT, data)
   }
 
+  async sendUpgradeRequest(data: UpgradeRequestEmailData) {
+    await this.enqueueAny(JOB_EMAIL_UPGRADE_REQUEST, data)
+  }
+
   private async enqueue(jobName: string, data: OrderEmailData) {
+    try {
+      await this.emailQueue.add(jobName, data, JOB_DEFAULT_OPTS)
+    } catch (e: any) {
+      this.logger.warn(`Falha ao enfileirar e-mail "${jobName}": ${e.message}`)
+    }
+  }
+
+  private async enqueueAny(jobName: string, data: unknown) {
     try {
       await this.emailQueue.add(jobName, data, JOB_DEFAULT_OPTS)
     } catch (e: any) {
