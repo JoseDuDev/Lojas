@@ -16,6 +16,19 @@ interface StoreForm {
   freeShippingFrom: string
 }
 
+interface BillingStatus {
+  plan: string
+  effectivePlan: string
+  trial: {
+    active: boolean
+    plan: string | null
+    endsAt: string | null
+    daysRemaining: number | null
+  }
+  pendingRequest: { id: string; toPlan: string; createdAt: string } | null
+  billingEmail: string | null
+}
+
 const EMPTY: StoreForm = {
   name: '',
   description: '',
@@ -29,6 +42,18 @@ const EMPTY: StoreForm = {
   freeShippingFrom: '',
 }
 
+const PLAN_LABEL: Record<string, string> = {
+  BASIC: 'Basic',
+  PRO: 'Pro',
+  ENTERPRISE: 'Enterprise',
+}
+
+const UPGRADEABLE_TO: Record<string, string[]> = {
+  BASIC: ['PRO', 'ENTERPRISE'],
+  PRO: ['ENTERPRISE'],
+  ENTERPRISE: [],
+}
+
 export default function AdminSettings() {
   const [form, setForm] = useState<StoreForm>({ ...EMPTY })
   const [loading, setLoading] = useState(true)
@@ -36,27 +61,37 @@ export default function AdminSettings() {
   const [success, setSuccess] = useState(false)
   const [error, setError] = useState('')
 
+  const [billing, setBilling] = useState<BillingStatus | null>(null)
+  const [upgradeTarget, setUpgradeTarget] = useState<string | null>(null)
+  const [requestingUpgrade, setRequestingUpgrade] = useState(false)
+  const [upgradeSuccess, setUpgradeSuccess] = useState(false)
+  const [upgradeError, setUpgradeError] = useState('')
+
   useEffect(() => {
     const token = localStorage.getItem('admin_token')
     if (!token) { window.location.href = '/admin/login'; return }
-    api.get<any>('/store', { token })
-      .then((store) => {
-        const s = store.storeSettings ?? {}
-        setForm({
-          name: store.name ?? '',
-          description: store.description ?? '',
-          logoUrl: store.logoUrl ?? '',
-          primaryColor: store.primaryColor ?? '#000000',
-          secondaryColor: store.secondaryColor ?? '#ffffff',
-          allowGuestCheckout: s.allowGuestCheckout ?? true,
-          currency: s.currency ?? 'BRL',
-          maxInstallments: s.maxInstallments ?? 12,
-          minOrderValue: s.minOrderValue != null ? String(s.minOrderValue) : '0',
-          freeShippingFrom: s.freeShippingFrom != null ? String(s.freeShippingFrom) : '',
-        })
+
+    Promise.all([
+      api.get<any>('/store', { token }),
+      api.get<BillingStatus>('/billing/status', { token }).catch(() => null),
+    ]).then(([store, billingData]) => {
+      const s = store.storeSettings ?? {}
+      setForm({
+        name: store.name ?? '',
+        description: store.description ?? '',
+        logoUrl: store.logoUrl ?? '',
+        primaryColor: store.primaryColor ?? '#000000',
+        secondaryColor: store.secondaryColor ?? '#ffffff',
+        allowGuestCheckout: s.allowGuestCheckout ?? true,
+        currency: s.currency ?? 'BRL',
+        maxInstallments: s.maxInstallments ?? 12,
+        minOrderValue: s.minOrderValue != null ? String(s.minOrderValue) : '0',
+        freeShippingFrom: s.freeShippingFrom != null ? String(s.freeShippingFrom) : '',
       })
-      .catch(console.error)
-      .finally(() => setLoading(false))
+      setBilling(billingData)
+    })
+    .catch(console.error)
+    .finally(() => setLoading(false))
   }, [])
 
   async function save() {
@@ -88,6 +123,34 @@ export default function AdminSettings() {
     }
   }
 
+  async function confirmUpgrade() {
+    if (!upgradeTarget) return
+    const token = localStorage.getItem('admin_token') ?? ''
+    setRequestingUpgrade(true)
+    setUpgradeError('')
+    try {
+      await api.post('/billing/upgrade', { toPlan: upgradeTarget }, { token })
+      setUpgradeSuccess(true)
+      setUpgradeTarget(null)
+      setBilling((prev) =>
+        prev
+          ? {
+              ...prev,
+              pendingRequest: {
+                id: 'pending',
+                toPlan: upgradeTarget,
+                createdAt: new Date().toISOString(),
+              },
+            }
+          : prev,
+      )
+    } catch (e: any) {
+      setUpgradeError(e.message)
+    } finally {
+      setRequestingUpgrade(false)
+    }
+  }
+
   if (loading) {
     return (
       <div>
@@ -96,6 +159,8 @@ export default function AdminSettings() {
       </div>
     )
   }
+
+  const upgradableTargets = billing ? (UPGRADEABLE_TO[billing.effectivePlan] ?? []) : []
 
   return (
     <div>
@@ -115,6 +180,88 @@ export default function AdminSettings() {
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-600 rounded-xl p-4 mb-5 text-sm">
           {error}
+        </div>
+      )}
+
+      {/* Seção de plano */}
+      {billing && (
+        <div className="bg-white rounded-xl border p-6 mb-6">
+          <h2 className="font-semibold mb-4">Plano atual</h2>
+          <div className="flex flex-wrap items-center gap-3 mb-4">
+            <span className="bg-gray-100 text-gray-800 text-sm font-semibold px-3 py-1 rounded-full uppercase">
+              {PLAN_LABEL[billing.plan] ?? billing.plan}
+            </span>
+            {billing.trial.active && (
+              <span className="bg-yellow-100 text-yellow-800 text-xs font-semibold px-2 py-1 rounded-full uppercase">
+                EM TRIAL
+              </span>
+            )}
+          </div>
+
+          {billing.trial.active && billing.trial.plan && (
+            <p className="text-sm text-yellow-700 mb-3">
+              Usando o plano <strong>{PLAN_LABEL[billing.trial.plan] ?? billing.trial.plan}</strong> em trial.
+              {billing.trial.daysRemaining !== null && (
+                <> Expira em <strong>{billing.trial.daysRemaining} dia{billing.trial.daysRemaining !== 1 ? 's' : ''}</strong>.</>
+              )}
+            </p>
+          )}
+
+          {upgradeSuccess && (
+            <div className="bg-green-50 border border-green-200 text-green-700 rounded-lg p-3 mb-3 text-sm">
+              Solicitação de upgrade enviada com sucesso. Entraremos em contato em breve.
+            </div>
+          )}
+
+          {billing.pendingRequest ? (
+            <p className="text-sm text-blue-700 font-medium">
+              Upgrade para <strong>{PLAN_LABEL[billing.pendingRequest.toPlan] ?? billing.pendingRequest.toPlan}</strong> solicitado — aguardando aprovação.
+            </p>
+          ) : billing.effectivePlan === 'ENTERPRISE' ? (
+            <p className="text-sm text-gray-500">Você está no plano máximo.</p>
+          ) : (
+            <div className="flex flex-wrap gap-2 mt-2">
+              {upgradableTargets.map((target) => (
+                <button
+                  key={target}
+                  onClick={() => { setUpgradeTarget(target); setUpgradeError('') }}
+                  className="border border-gray-300 text-gray-700 px-4 py-1.5 rounded-lg text-sm hover:bg-gray-50 transition">
+                  Solicitar {PLAN_LABEL[target] ?? target}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Modal de confirmação de upgrade */}
+      {upgradeTarget && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm mx-4">
+            <h3 className="font-semibold text-lg mb-2">
+              Solicitar upgrade para {PLAN_LABEL[upgradeTarget] ?? upgradeTarget}
+            </h3>
+            <p className="text-sm text-gray-600 mb-4">
+              Sua solicitação será enviada para a equipe Valorem. Entraremos em contato em até 24h para confirmar o upgrade.
+            </p>
+            {upgradeError && (
+              <p className="text-sm text-red-600 mb-3">{upgradeError}</p>
+            )}
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setUpgradeTarget(null)}
+                disabled={requestingUpgrade}
+                className="px-4 py-2 text-sm border rounded-lg hover:bg-gray-50 disabled:opacity-50 transition">
+                Cancelar
+              </button>
+              <button
+                onClick={confirmUpgrade}
+                disabled={requestingUpgrade}
+                className="px-4 py-2 text-sm bg-black text-white rounded-lg hover:bg-gray-800 disabled:opacity-50 transition">
+                {requestingUpgrade ? 'Enviando...' : 'Confirmar solicitação'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
