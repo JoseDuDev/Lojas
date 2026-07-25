@@ -9,6 +9,15 @@ RUN npm install
 
 COPY apps/web/ ./apps/web/
 
+# O Next inlina NEXT_PUBLIC_* no bundle durante o build — definir isso como
+# variável de runtime no compose não tem efeito nenhum no código do cliente.
+# Por isso entra como ARG: a URL da API fica assada na imagem, e cada ambiente
+# (local, loja.mjml.com.br) precisa da sua própria build.
+ARG NEXT_PUBLIC_API_URL=http://localhost:3001
+ARG NEXT_PUBLIC_DEV_STORE=demo
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_DEV_STORE=$NEXT_PUBLIC_DEV_STORE
+
 RUN npm run build --workspace=apps/web
 
 # ─── Production stage ─────────────────────────────────────────────────────────

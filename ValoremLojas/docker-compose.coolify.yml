@@ -1,0 +1,78 @@
+# =============================================
+# VALOREM LOJAS — Produção (Coolify / Hetzner)
+#
+# Diferenças em relação ao docker-compose.yml (que é o de desenvolvimento):
+#   - sem `db` e `redis`: usa as instâncias compartilhadas do Coolify,
+#     lado a lado com Atendefy, Horafy e Delify
+#   - sem NENHUMA porta publicada: quem expõe é o Traefik do Coolify
+#   - meilisearch em MEILI_ENV=production (exige master key forte e
+#     desliga o painel de busca público)
+#
+# Variáveis a definir na UI do Coolify:
+#   DATABASE_URL   postgresql://lojas:SENHA@<postgres-coolify>:5432/lojas
+#   REDIS_URL      redis://:SENHA@<redis-coolify>:6379/3
+#   MEILI_MASTER_KEY, JWT_SECRET, PAYMENT_API_KEY, ...
+#   BASE_DOMAIN    loja.mjml.com.br
+#   FRONTEND_URL   https://loja.mjml.com.br
+#
+# Domínios no Coolify:  loja.mjml.com.br  e  *.loja.mjml.com.br
+# =============================================
+
+services:
+  meilisearch:
+    image: getmeili/meilisearch:v1.11
+    container_name: valorem_lojas_search
+    restart: unless-stopped
+    environment:
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:?defina MEILI_MASTER_KEY}
+      MEILI_ENV: production
+    volumes:
+      - meilisearch_data:/meili_data
+    networks:
+      - lojas-net
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: valorem_lojas_api
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?defina DATABASE_URL}
+      REDIS_URL: ${REDIS_URL:?defina REDIS_URL}
+      MEILI_HOST: http://meilisearch:7700
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:?defina MEILI_MASTER_KEY}
+      JWT_SECRET: ${JWT_SECRET:?defina JWT_SECRET}
+      BASE_DOMAIN: ${BASE_DOMAIN:-loja.mjml.com.br}
+      FRONTEND_URL: ${FRONTEND_URL:-https://loja.mjml.com.br}
+      PAYMENT_API_URL: ${PAYMENT_API_URL}
+      PAYMENT_API_KEY: ${PAYMENT_API_KEY}
+      NODE_ENV: production
+    depends_on:
+      - meilisearch
+    networks:
+      - lojas-net
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        # Build arg, não environment: o Next inlina NEXT_PUBLIC_* no bundle.
+        # Trocar este valor exige rebuild da imagem, não só restart.
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://loja.mjml.com.br/api}
+    container_name: valorem_lojas_web
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+    depends_on:
+      - api
+    networks:
+      - lojas-net
+
+volumes:
+  meilisearch_data:
+
+networks:
+  lojas-net:
+    driver: bridge

@@ -1,5 +1,5 @@
-version: '3.9'
-
+# Compose de DESENVOLVIMENTO: publica portas no host de propósito.
+# Para produção use docker-compose.coolify.yml.
 services:
   db:
     image: postgres:15-alpine
@@ -58,12 +58,15 @@ services:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
+      args:
+        # Precisa ser build arg, não environment: o Next inlina NEXT_PUBLIC_*
+        # no bundle durante o build.
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3001}
     container_name: valorem_lojas_web
     restart: unless-stopped
     ports:
       - '3002:3000'
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:3001
       NODE_ENV: production
     depends_on:
       - api
